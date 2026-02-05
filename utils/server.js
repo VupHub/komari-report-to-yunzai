@@ -1,0 +1,341 @@
+import http from 'node:http'
+import { URL } from 'node:url'
+
+import { normalizeConfig, readConfig } from './config.js'
+
+function decodeBasicAuth(authHeader) {
+  const h = String(authHeader ?? '').trim()
+  if (!h.toLowerCase().startsWith('basic ')) return null
+  const b64 = h.slice(6).trim()
+  try {
+    const decoded = Buffer.from(b64, 'base64').toString('utf8')
+    const i = decoded.indexOf(':')
+    if (i === -1) return { username: decoded, password: '' }
+    return { username: decoded.slice(0, i), password: decoded.slice(i + 1) }
+  } catch {
+    return null
+  }
+}
+
+function getBots() {
+  const b = globalThis.Bot
+  if (!b) return []
+  if (typeof b.pickGroup === 'function') return [b]
+  if (Array.isArray(b)) return b.filter((x) => x && typeof x.pickGroup === 'function')
+  if (b instanceof Map) return Array.from(b.values()).filter((x) => x && typeof x.pickGroup === 'function')
+  if (typeof b === 'object') {
+    return Object.values(b).filter((x) => x && typeof x.pickGroup === 'function')
+  }
+  return []
+}
+
+async function trySendToGroup(groupId, msg) {
+  const bots = getBots()
+  for (const bot of bots) {
+    try {
+      const group = bot.pickGroup?.(Number(groupId))
+      if (!group?.sendMsg) continue
+      await group.sendMsg(msg)
+      return true
+    } catch {}
+  }
+  return false
+}
+
+async function trySendToUser(userId, msg) {
+  const bots = getBots()
+  for (const bot of bots) {
+    try {
+      const user = bot.pickUser?.(Number(userId))
+      if (!user?.sendMsg) continue
+      await user.sendMsg(msg)
+      return true
+    } catch {}
+  }
+  return false
+}
+
+function pickFirstNonEmpty(...values) {
+  for (const v of values) {
+    const s = typeof v === 'string' ? v : v == null ? '' : String(v)
+    if (s && s.trim()) return s.trim()
+  }
+  return ''
+}
+
+function formatMessage(payload, cfg) {
+  const title = pickFirstNonEmpty(payload?.title, payload?.event, payload?.type, '通知')
+  const msg = pickFirstNonEmpty(payload?.message, payload?.text, payload?.content)
+  const message = msg || JSON.stringify(payload ?? {}, null, 2)
+
+  const template = String(cfg.message?.template ?? '{prefix} {title}\n{message}')
+  const prefix = String(cfg.message?.prefix ?? '')
+  return template
+    .replaceAll('{prefix}', prefix)
+    .replaceAll('{title}', title)
+    .replaceAll('{message}', message)
+    .trim()
+}
+
+function readRequestBody(req, maxBytes) {
+  return new Promise((resolve, reject) => {
+    let total = 0
+    const chunks = []
+    req.on('data', (chunk) => {
+      total += chunk.length
+      if (total > maxBytes) {
+        reject(new Error('body_too_large'))
+        req.destroy()
+        return
+      }
+      chunks.push(chunk)
+    })
+    req.on('end', () => resolve(Buffer.concat(chunks)))
+    req.on('error', reject)
+  })
+}
+
+function parseBody(buffer, contentType) {
+  const raw = buffer.toString('utf8')
+  if (!raw) return {}
+  if (String(contentType ?? '').toLowerCase().includes('application/json')) {
+    return JSON.parse(raw)
+  }
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return { text: raw }
+  }
+}
+
+function checkToken(urlObj, req, cfg) {
+  const secret = String(cfg.secret ?? '').trim()
+  if (!secret) return true
+  const tokenFromQuery = urlObj.searchParams.get('token') || ''
+  const tokenFromHeader = String(req.headers['x-komari-token'] ?? req.headers['x-webhook-token'] ?? '').trim()
+  return tokenFromQuery === secret || tokenFromHeader === secret
+}
+
+function parseHeadersJson(input) {
+  const raw = String(input ?? '').trim()
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed
+    return null
+  } catch {
+    return null
+  }
+}
+
+function checkBasicAuth(req, cfg) {
+  const username = String(cfg.komari?.username ?? '').trim()
+  const password = String(cfg.komari?.password ?? '').trim()
+  if (!username && !password) return true
+  const parsed = decodeBasicAuth(req.headers.authorization)
+  if (!parsed) return false
+  return parsed.username === username && parsed.password === password
+}
+
+function checkRequiredHeaders(req, cfg) {
+  const required = parseHeadersJson(cfg.komari?.headers)
+  if (!required) return true
+  for (const [k, v] of Object.entries(required)) {
+    const key = String(k).toLowerCase()
+    const expected = String(v)
+    const actual = req.headers[key]
+    if (Array.isArray(actual)) {
+      if (!actual.some((x) => String(x) === expected)) return false
+      continue
+    }
+    if (String(actual ?? '') !== expected) return false
+  }
+  return true
+}
+
+function checkContentType(req, cfg) {
+  const expected = String(cfg.komari?.content_type ?? '').trim().toLowerCase()
+  if (!expected) return true
+  const actual = String(req.headers['content-type'] ?? '').toLowerCase()
+  return actual.includes(expected)
+}
+
+function createServer(onWebhook) {
+  return http.createServer(async (req, res) => {
+    const cfg = normalizeConfig(readConfig())
+
+    const urlObj = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
+    if (urlObj.pathname !== cfg.path) {
+      res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
+      res.end('Not Found')
+      return
+    }
+
+    if (req.method === 'GET') {
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
+      res.end(JSON.stringify({ ok: true }))
+      return
+    }
+
+    const expectedMethod = String(cfg.komari?.method ?? 'POST').toUpperCase()
+    if (req.method !== expectedMethod) {
+      res.writeHead(405, { 'content-type': 'text/plain; charset=utf-8' })
+      res.end('Method Not Allowed')
+      return
+    }
+
+    if (!checkToken(urlObj, req, cfg)) {
+      res.writeHead(401, { 'content-type': 'text/plain; charset=utf-8' })
+      res.end('Unauthorized')
+      return
+    }
+
+    if (!checkBasicAuth(req, cfg)) {
+      res.writeHead(401, { 'content-type': 'text/plain; charset=utf-8' })
+      res.end('Unauthorized')
+      return
+    }
+
+    if (!checkRequiredHeaders(req, cfg)) {
+      res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' })
+      res.end('Forbidden')
+      return
+    }
+
+    if (!checkContentType(req, cfg)) {
+      res.writeHead(415, { 'content-type': 'text/plain; charset=utf-8' })
+      res.end('Unsupported Media Type')
+      return
+    }
+
+    let bodyBuf
+    try {
+      bodyBuf = await readRequestBody(req, cfg.security.maxBodyBytes)
+    } catch (err) {
+      res.writeHead(413, { 'content-type': 'text/plain; charset=utf-8' })
+      res.end(String(err?.message || 'Payload Too Large'))
+      return
+    }
+
+    let payload
+    try {
+      payload = parseBody(bodyBuf, req.headers['content-type'])
+    } catch (err) {
+      res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' })
+      res.end(String(err?.message || 'Bad Request'))
+      return
+    }
+
+    const text = formatMessage(payload, cfg)
+    const targets = {
+      groups: cfg.targets.groups,
+      users: cfg.targets.users
+    }
+
+    try {
+      await onWebhook({ payload, text, targets, cfg })
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
+      res.end(JSON.stringify({ ok: true }))
+    } catch (err) {
+      res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' })
+      res.end(JSON.stringify({ ok: false, error: String(err?.message || err) }))
+    }
+  })
+}
+
+function needRestart(prevCfg, nextCfg) {
+  return (
+    prevCfg.enable !== nextCfg.enable ||
+    prevCfg.listenHost !== nextCfg.listenHost ||
+    prevCfg.listenPort !== nextCfg.listenPort ||
+    prevCfg.path !== nextCfg.path
+  )
+}
+
+export function ensureKomariWebhookServer() {
+  globalThis.__komariWebhookServer ??= {
+    server: null,
+    cfgSnapshot: null,
+    starting: null
+  }
+
+  const state = globalThis.__komariWebhookServer
+
+  const start = async () => {
+    const cfg = normalizeConfig(readConfig())
+    state.cfgSnapshot = cfg
+
+    if (!cfg.enable) return
+    if (state.server) return
+
+    const srv = createServer(async ({ text, targets }) => {
+      const sendTasks = []
+      for (const gid of targets.groups) {
+        sendTasks.push(trySendToGroup(gid, text))
+      }
+      for (const uid of targets.users) {
+        sendTasks.push(trySendToUser(uid, text))
+      }
+      await Promise.allSettled(sendTasks)
+    })
+
+    await new Promise((resolve, reject) => {
+      srv.once('error', reject)
+      srv.listen(cfg.listenPort, cfg.listenHost, resolve)
+    })
+
+    state.server = srv
+  }
+
+  const stop = async () => {
+    if (!state.server) return
+    const srv = state.server
+    state.server = null
+    await new Promise((resolve) => srv.close(() => resolve()))
+  }
+
+  const refresh = async () => {
+    const nextCfg = normalizeConfig(readConfig())
+    const prevCfg = state.cfgSnapshot ?? nextCfg
+    const restart = needRestart(prevCfg, nextCfg)
+    state.cfgSnapshot = nextCfg
+
+    if (restart) {
+      await stop()
+      await start()
+      return
+    }
+
+    if (!nextCfg.enable) {
+      await stop()
+      return
+    }
+
+    if (!state.server) {
+      await start()
+    }
+  }
+
+  const ensureStarted = async () => {
+    if (state.starting) return state.starting
+    state.starting = (async () => {
+      try {
+        await refresh()
+      } finally {
+        state.starting = null
+      }
+    })()
+    return state.starting
+  }
+
+  return {
+    start: ensureStarted,
+    stop,
+    refresh,
+    getState: () => ({
+      running: Boolean(state.server),
+      cfg: state.cfgSnapshot ?? normalizeConfig(readConfig())
+    })
+  }
+}
+
