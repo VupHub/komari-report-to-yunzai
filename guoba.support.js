@@ -16,7 +16,7 @@ function fromCommaSeparated(input) {
   )
 }
 
-export default function supportGuoba() {
+export function supportGuoba() {
   return {
     pluginInfo: {
       name: 'komari-report-to-yunzai',
@@ -31,43 +31,43 @@ export default function supportGuoba() {
     configInfo: {
       schemas: [
         {
-          field: 'komari.url',
+          field: 'komari_url',
           label: 'Komari Webhook: url *',
           component: 'Input',
           placeholder: 'http://你的服务器IP:25888/komari/webhook'
         },
         {
-          field: 'komari.method',
+          field: 'komari_method',
           label: 'Komari Webhook: method',
           component: 'Input',
           placeholder: 'POST'
         },
         {
-          field: 'komari.content_type',
+          field: 'komari_content_type',
           label: 'Komari Webhook: content_type',
           component: 'Input',
           placeholder: 'application/json'
         },
         {
-          field: 'komari.headers',
+          field: 'komari_headers',
           label: 'Komari Webhook: headers (JSON)',
           component: 'Textarea',
           placeholder: '{"x-komari-token":"xxx"}'
         },
         {
-          field: 'komari.body',
+          field: 'komari_body',
           label: 'Komari Webhook: body',
           component: 'Textarea',
           placeholder: '{"title":"{{title}}","message":"{{message}}"}'
         },
         {
-          field: 'komari.username',
+          field: 'komari_username',
           label: 'Komari Webhook: username',
           component: 'Input',
           placeholder: '留空则不启用 Basic Auth 校验'
         },
         {
-          field: 'komari.password',
+          field: 'komari_password',
           label: 'Komari Webhook: password',
           component: 'Input',
           placeholder: '留空则不启用 Basic Auth 校验'
@@ -102,25 +102,25 @@ export default function supportGuoba() {
           placeholder: '留空则不鉴权'
         },
         {
-          field: 'targets.groups',
+          field: 'targets_groups',
           label: '通知QQ群',
           component: 'Input',
           placeholder: '多个群号用逗号分隔，如：123,456'
         },
         {
-          field: 'targets.users',
+          field: 'targets_users',
           label: '通知私聊用户',
           component: 'Input',
           placeholder: '多个QQ号用逗号分隔，如：123,456'
         },
         {
-          field: 'message.prefix',
+          field: 'message_prefix',
           label: '消息前缀',
           component: 'Input',
           placeholder: '[Komari]'
         },
         {
-          field: 'message.template',
+          field: 'message_template',
           label: '消息模板',
           component: 'Textarea',
           placeholder: '{prefix} {title}\\n{message}'
@@ -129,30 +129,34 @@ export default function supportGuoba() {
       getConfigData() {
         const cfg = normalizeConfig(readConfig())
         return {
-          komari: cfg.komari,
+          komari_url: cfg.komari.url,
+          komari_method: cfg.komari.method,
+          komari_content_type: cfg.komari.content_type,
+          komari_headers: cfg.komari.headers,
+          komari_body: cfg.komari.body,
+          komari_username: cfg.komari.username,
+          komari_password: cfg.komari.password,
           enable: cfg.enable,
           listenHost: cfg.listenHost,
           listenPort: cfg.listenPort,
           path: cfg.path,
           secret: cfg.secret,
-          targets: {
-            groups: toCommaSeparated(cfg.targets.groups),
-            users: toCommaSeparated(cfg.targets.users)
-          },
-          message: cfg.message,
-          security: cfg.security
+          targets_groups: toCommaSeparated(cfg.targets.groups),
+          targets_users: toCommaSeparated(cfg.targets.users),
+          message_prefix: cfg.message.prefix,
+          message_template: cfg.message.template
         }
       },
       async setConfigData(data) {
         const next = {
           komari: {
-            url: data?.komari?.url,
-            method: data?.komari?.method,
-            content_type: data?.komari?.content_type,
-            headers: data?.komari?.headers,
-            body: data?.komari?.body,
-            username: data?.komari?.username,
-            password: data?.komari?.password
+            url: data?.komari_url,
+            method: data?.komari_method,
+            content_type: data?.komari_content_type,
+            headers: data?.komari_headers,
+            body: data?.komari_body,
+            username: data?.komari_username,
+            password: data?.komari_password
           },
           enable: Boolean(data.enable),
           listenHost: data.listenHost,
@@ -160,12 +164,12 @@ export default function supportGuoba() {
           path: data.path,
           secret: data.secret,
           targets: {
-            groups: fromCommaSeparated(data?.targets?.groups),
-            users: fromCommaSeparated(data?.targets?.users)
+            groups: fromCommaSeparated(data?.targets_groups),
+            users: fromCommaSeparated(data?.targets_users)
           },
           message: {
-            prefix: data?.message?.prefix,
-            template: data?.message?.template
+            prefix: data?.message_prefix,
+            template: data?.message_template
           }
         }
         updateConfig(next)
@@ -175,4 +179,6 @@ export default function supportGuoba() {
     }
   }
 }
+
+export default supportGuoba
 
