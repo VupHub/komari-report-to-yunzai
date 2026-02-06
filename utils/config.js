@@ -7,30 +7,13 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const configPath = path.resolve(__dirname, '..', 'config', 'config.json')
 
+const DEFAULT_ROUTE_PATH = '/komari/webhook'
+
 const defaultConfig = Object.freeze({
-  enable: true,
+  enable: false,
   listenHost: '0.0.0.0',
   listenPort: 25888,
-  path: '/komari/webhook',
-  secret: '',
   routes: [],
-  komari: {
-    url: '',
-    method: 'POST',
-    content_type: 'application/json',
-    headers: '{}',
-    body: '{"title":"{{title}}","message":"{{message}}"}',
-    username: '',
-    password: ''
-  },
-  targets: {
-    groups: [],
-    users: []
-  },
-  message: {
-    prefix: '[Komari]',
-    template: '{prefix} {title}\n{message}'
-  },
   security: {
     maxBodyBytes: 1024 * 1024
   }
@@ -43,11 +26,6 @@ function randomUrlSafeString(bytes = 18) {
     .replaceAll('+', '-')
     .replaceAll('/', '_')
     .replaceAll('=', '')
-}
-
-function shouldRegenerateSecret(value) {
-  const s = String(value ?? '').trim()
-  return !s || s === 'tok' || s === 'token'
 }
 
 function shouldRegenerateUser(value) {
@@ -137,11 +115,24 @@ function normalizeRoute(route, index, cfg) {
       id: '',
       name: '',
       enable: true,
-      path: defaultConfig.path,
-      secret: '',
-      komari: structuredClone(defaultConfig.komari),
-      targets: structuredClone(defaultConfig.targets),
-      message: structuredClone(defaultConfig.message)
+      path: DEFAULT_ROUTE_PATH,
+      komari: {
+        url: '',
+        method: 'POST',
+        content_type: '',
+        headers: '',
+        body: '',
+        username: '',
+        password: ''
+      },
+      targets: {
+        groups: [],
+        users: []
+      },
+      message: {
+        prefix: '[Komari]',
+        template: '{prefix} {title}\n{message}'
+      }
     },
     route ?? {}
   )
@@ -149,15 +140,15 @@ function normalizeRoute(route, index, cfg) {
   r.enable = Boolean(r.enable)
   r.id = String(r.id ?? '').trim() || `route${index + 1}`
   r.name = String(r.name ?? '').trim() || r.id
-  r.path = normalizePathname(r.path, defaultConfig.path)
-  r.secret = String(r.secret ?? '').trim()
+  r.path = normalizePathname(r.path, DEFAULT_ROUTE_PATH)
+  delete r.secret
 
   r.komari ??= {}
   r.komari.url = String(r.komari.url ?? '').trim()
-  r.komari.method = String(r.komari.method ?? defaultConfig.komari.method).trim().toUpperCase() || defaultConfig.komari.method
-  r.komari.content_type = String(r.komari.content_type ?? defaultConfig.komari.content_type).trim() || defaultConfig.komari.content_type
-  r.komari.headers = String(r.komari.headers ?? defaultConfig.komari.headers).trim() || defaultConfig.komari.headers
-  r.komari.body = String(r.komari.body ?? defaultConfig.komari.body)
+  r.komari.method = String(r.komari.method ?? 'POST').trim().toUpperCase() || 'POST'
+  r.komari.content_type = String(r.komari.content_type ?? '').trim()
+  r.komari.headers = String(r.komari.headers ?? '').trim()
+  r.komari.body = String(r.komari.body ?? '')
   r.komari.username = String(r.komari.username ?? '').trim()
   r.komari.password = String(r.komari.password ?? '').trim()
 
@@ -166,21 +157,13 @@ function normalizeRoute(route, index, cfg) {
   r.targets.users = normalizeTargets(r.targets.users)
 
   r.message ??= {}
-  r.message.prefix = String(r.message.prefix ?? defaultConfig.message.prefix)
-  r.message.template = String(r.message.template ?? defaultConfig.message.template)
+  r.message.prefix = String(r.message.prefix ?? '[Komari]')
+  r.message.template = String(r.message.template ?? '{prefix} {title}\n{message}')
 
-  if (!r.komari.url) {
-    const host = cfg.listenHost === '0.0.0.0' ? '你的服务器IP' : cfg.listenHost
-    r.komari.url = `http://${host}:${cfg.listenPort}${r.path}`
-  }
-
-  if (shouldRegenerateSecret(r.secret)) {
-    r.secret = randomUrlSafeString(18)
-  }
-  if (shouldRegenerateUser(r.komari.username)) {
+  if (r.enable && shouldRegenerateUser(r.komari.username)) {
     r.komari.username = `komari_${randomUrlSafeString(6)}`
   }
-  if (shouldRegeneratePass(r.komari.password)) {
+  if (r.enable && shouldRegeneratePass(r.komari.password)) {
     r.komari.password = randomUrlSafeString(18)
   }
 
@@ -195,26 +178,11 @@ export function normalizeConfig(input) {
 
   const port = Number(cfg.listenPort)
   cfg.listenPort = Number.isFinite(port) ? Math.max(1, Math.min(65535, Math.trunc(port))) : defaultConfig.listenPort
-
-  cfg.path = normalizePathname(cfg.path, defaultConfig.path)
-  cfg.secret = String(cfg.secret ?? '').trim()
-
-  cfg.komari ??= {}
-  cfg.komari.url = String(cfg.komari.url ?? '').trim()
-  cfg.komari.method = String(cfg.komari.method ?? defaultConfig.komari.method).trim().toUpperCase() || defaultConfig.komari.method
-  cfg.komari.content_type = String(cfg.komari.content_type ?? defaultConfig.komari.content_type).trim() || defaultConfig.komari.content_type
-  cfg.komari.headers = String(cfg.komari.headers ?? defaultConfig.komari.headers).trim() || defaultConfig.komari.headers
-  cfg.komari.body = String(cfg.komari.body ?? defaultConfig.komari.body)
-  cfg.komari.username = String(cfg.komari.username ?? '').trim()
-  cfg.komari.password = String(cfg.komari.password ?? '').trim()
-
-  cfg.targets ??= {}
-  cfg.targets.groups = normalizeTargets(cfg.targets.groups)
-  cfg.targets.users = normalizeTargets(cfg.targets.users)
-
-  cfg.message ??= {}
-  cfg.message.prefix = String(cfg.message.prefix ?? defaultConfig.message.prefix)
-  cfg.message.template = String(cfg.message.template ?? defaultConfig.message.template)
+  delete cfg.path
+  delete cfg.secret
+  delete cfg.komari
+  delete cfg.targets
+  delete cfg.message
 
   cfg.security ??= {}
   const maxBodyBytes = Number(cfg.security.maxBodyBytes)
@@ -222,30 +190,28 @@ export function normalizeConfig(input) {
     ? Math.max(1024, Math.min(10 * 1024 * 1024, Math.trunc(maxBodyBytes)))
     : defaultConfig.security.maxBodyBytes
 
-  const legacyRoute = {
-    id: 'default',
-    name: '默认',
-    enable: true,
-    path: cfg.path,
-    secret: cfg.secret,
-    komari: cfg.komari,
-    targets: cfg.targets,
-    message: cfg.message
+  const routesInput = Array.isArray(cfg.routes) ? cfg.routes : []
+  let routesSource = routesInput
+  if (!routesSource.length) {
+    const legacy = input ?? {}
+    const hasLegacy =
+      legacy && typeof legacy === 'object' && (legacy.path || legacy.komari || legacy.targets || legacy.message || legacy.secret)
+    if (hasLegacy) {
+      routesSource = [
+        {
+          id: 'default',
+          name: '默认',
+          enable: true,
+          path: legacy.path ?? DEFAULT_ROUTE_PATH,
+          komari: legacy.komari ?? {},
+          targets: legacy.targets ?? {},
+          message: legacy.message ?? {}
+        }
+      ]
+    }
   }
 
-  const routesInput = Array.isArray(cfg.routes) ? cfg.routes : []
-  const routesSource = routesInput.length ? routesInput : [legacyRoute]
-  cfg.routes = routesSource.map((r, i) => {
-    const base = i === 0 ? legacyRoute : undefined
-    return normalizeRoute(deepMerge(base ?? {}, r ?? {}), i, cfg)
-  })
-
-  const firstRoute = cfg.routes[0]
-  cfg.path = firstRoute.path
-  cfg.secret = firstRoute.secret
-  cfg.komari = firstRoute.komari
-  cfg.targets = firstRoute.targets
-  cfg.message = firstRoute.message
+  cfg.routes = routesSource.map((r, i) => normalizeRoute(r, i, cfg))
 
   return cfg
 }

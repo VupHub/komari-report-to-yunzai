@@ -63,7 +63,7 @@ export class KomariWebhook extends plugin {
       name: 'KomariWebhook',
       dsc: 'Komari Webhook 通知转发',
       event: 'message',
-      priority: 5000,
+      priority: 1,
       rule: [
         {
           reg: '^\\s*#?komari(通知)?(状态|配置)\\s*$',
@@ -81,15 +81,15 @@ export class KomariWebhook extends plugin {
     const isMaster = !!e?.isMaster
     const { running, cfg } = server.getState()
     const firstRoute = Array.isArray(cfg.routes) && cfg.routes.length ? cfg.routes[0] : null
-    const path = firstRoute?.path || cfg.path
-    const url = firstRoute?.komari?.url || cfg.komari?.url || `http://${cfg.listenHost === '0.0.0.0' ? '你的服务器IP' : cfg.listenHost}:${cfg.listenPort}${path}`
-    const token = firstRoute?.secret ?? cfg.secret
-    const username = firstRoute?.komari?.username ?? cfg.komari?.username
-    const password = firstRoute?.komari?.password ?? cfg.komari?.password
-    const method = firstRoute?.komari?.method ?? cfg.komari?.method
-    const contentType = firstRoute?.komari?.content_type ?? cfg.komari?.content_type
-    const groups = firstRoute?.targets?.groups ?? cfg.targets?.groups ?? []
-    const users = firstRoute?.targets?.users ?? cfg.targets?.users ?? []
+    const routePath = firstRoute?.path || '/komari/webhook'
+    const host = cfg.listenHost === '0.0.0.0' ? '你的服务器IP' : cfg.listenHost
+    const url = `http://${host}:${cfg.listenPort}${routePath}`
+    const username = firstRoute?.komari?.username
+    const password = firstRoute?.komari?.password
+    const method = firstRoute?.komari?.method
+    const contentType = firstRoute?.komari?.content_type
+    const groups = firstRoute?.targets?.groups ?? []
+    const users = firstRoute?.targets?.users ?? []
     const safeValue = (value) => {
       if (!value) return ''
       if (isMaster) return String(value)
@@ -102,10 +102,9 @@ export class KomariWebhook extends plugin {
       `Webhook：${url}`,
       `目标群：${groups.length ? groups.join(', ') : '无'}`,
       `目标私聊：${users.length ? users.join(', ') : '无'}`,
-      `Token：${token ? (isMaster ? safeValue(token) : '开启') : '关闭'}`,
       `BasicAuth：${username || password ? (isMaster ? `${safeValue(username)} / ${safeValue(password)}` : '开启') : '关闭'}`,
       `Method：${method || 'POST'}`,
-      `Content-Type：${contentType || 'application/json'}`
+      `Content-Type：${contentType || '未限制'}`
     ]
     await e.reply(lines.join('\n'), true)
     return true
@@ -123,4 +122,6 @@ export class KomariWebhook extends plugin {
     return true
   }
 }
+
+export default KomariWebhook
 

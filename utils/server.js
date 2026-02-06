@@ -1,7 +1,7 @@
 import http from 'node:http'
 import { URL } from 'node:url'
 
-import { ensureConfig, normalizeConfig } from './config.js'
+import { ensureConfig, normalizeConfig, readConfig } from './config.js'
 
 function decodeBasicAuth(authHeader) {
   const h = String(authHeader ?? '').trim()
@@ -108,14 +108,6 @@ function parseBody(buffer, contentType) {
   }
 }
 
-function checkToken(urlObj, req, route) {
-  const secret = String(route.secret ?? '').trim()
-  if (!secret) return true
-  const tokenFromQuery = urlObj.searchParams.get('token') || ''
-  const tokenFromHeader = String(req.headers['x-komari-token'] ?? req.headers['x-webhook-token'] ?? '').trim()
-  return tokenFromQuery === secret || tokenFromHeader === secret
-}
-
 function parseHeadersJson(input) {
   const raw = String(input ?? '').trim()
   if (!raw) return null
@@ -184,12 +176,6 @@ function createServer(getCfg, onWebhook) {
     if (req.method !== expectedMethod) {
       res.writeHead(405, { 'content-type': 'text/plain; charset=utf-8' })
       res.end('Method Not Allowed')
-      return
-    }
-
-    if (!checkToken(urlObj, req, route)) {
-      res.writeHead(401, { 'content-type': 'text/plain; charset=utf-8' })
-      res.end('Unauthorized')
       return
     }
 
@@ -273,14 +259,14 @@ export function ensureKomariWebhookServer() {
     const srv = createServer(
       () => state.cfgSnapshot ?? normalizeConfig(ensureConfig()),
       async ({ text, targets }) => {
-      const sendTasks = []
-      for (const gid of targets.groups) {
-        sendTasks.push(trySendToGroup(gid, text))
-      }
-      for (const uid of targets.users) {
-        sendTasks.push(trySendToUser(uid, text))
-      }
-      await Promise.allSettled(sendTasks)
+        const sendTasks = []
+        for (const gid of targets.groups) {
+          sendTasks.push(trySendToGroup(gid, text))
+        }
+        for (const uid of targets.users) {
+          sendTasks.push(trySendToUser(uid, text))
+        }
+        await Promise.allSettled(sendTasks)
       }
     )
 

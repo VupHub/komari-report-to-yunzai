@@ -14,7 +14,6 @@
   - content_type
   - headers（JSON）
   - Basic Auth（username/password）
-  - Token（可选，使用 `token` query 或 `x-komari-token` / `x-webhook-token` header）
 
 ## 安装
 
@@ -62,7 +61,7 @@ pnpm install --filter=komari-report-to-yunzai
 插件通过请求路径（`path`）区分不同的 Komari 推送关系；每个路由都可以配置独立的：
 
 - Komari Webhook 表单字段：`url * / method / content_type / headers / body / username / password`
-- 校验：Token（可选）、BasicAuth（可选）、headers/content_type/method
+- 校验：BasicAuth（可选）、headers/content_type/method
 - 转发目标：QQ群/私聊用户
 - 消息模板
 
@@ -77,7 +76,7 @@ Guoba 面板提供两种方式维护路由：
 
 说明：
 
-- `secret` 留空会自动生成并持久化（用于 Token 校验）
+- 本插件不使用 secret/token（Komari 不支持）；仅支持 Basic Auth（username/password）
 - `username/password` 留空会自动生成并持久化（用于 Basic Auth 校验）
 
 > OneBot v11 连接方式通常无法像 icqq 一样获取“好友/群列表”，因此面板里的 QQ/群下拉可能没有数据；此时仍可直接在下拉框内输入纯数字 ID（支持输入并回车添加）。
@@ -100,7 +99,6 @@ Guoba 面板提供两种方式维护路由：
 配置项说明（常用）：
 
     routes[].path: Webhook 路径（按路径命中路由）
-    routes[].secret: Token（可选，支持 query token / header x-komari-token / x-webhook-token）
     routes[].komari.*: Komari Webhook 表单对应字段与校验项
     routes[].targets.groups: 转发到的QQ群列表
     routes[].targets.users: 转发到的私聊用户列表

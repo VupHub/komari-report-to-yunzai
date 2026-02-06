@@ -147,8 +147,8 @@ export function supportGuoba() {
     pluginInfo: {
       name: 'komari-report-to-yunzai',
       title: 'Komari Webhook 转发',
-      author: 'Trae',
-      authorLink: '',
+      author: '@VupHub',
+      authorLink: 'https://github.com/VupHub/',
       link: '',
       isV3: true,
       isV2: false,
@@ -179,8 +179,7 @@ export function supportGuoba() {
           label: '路由列表（JSON）',
           component: 'Input',
           componentProps: { type: 'textarea', autosize: { minRows: 10, maxRows: 30 } },
-          placeholder:
-            '[\n  {\n    "id": "route1",\n    "name": "默认",\n    "enable": true,\n    "path": "/komari/webhook",\n    "secret": "",\n    "komari": { "url": "", "method": "POST", "content_type": "application/json", "headers": "{}", "body": "{\\"title\\":\\"{{title}}\\",\\"message\\":\\"{{message}}\\"}", "username": "", "password": "" },\n    "targets": { "groups": [], "users": [] },\n    "message": { "prefix": "[Komari]", "template": "{prefix} {title}\\n{message}" }\n  }\n]'
+          placeholder: '[]'
         },
         {
           field: 'route_action',
@@ -224,16 +223,10 @@ export function supportGuoba() {
           componentProps: { ...selectCreatable, placeholder: '请选择或输入', options: [{ label: '/komari/webhook', value: '/komari/webhook' }] }
         },
         {
-          field: 'route_add_secret',
-          label: '新增路由 Token',
-          component: 'Input',
-          placeholder: '留空则自动生成'
-        },
-        {
           field: 'route_add_komari_url',
           label: '新增路由 url',
           component: 'Input',
-          placeholder: '留空则自动按监听信息生成'
+          placeholder: '选填：仅用于展示/记录，不参与转发'
         },
         {
           field: 'route_add_komari_method',
@@ -254,14 +247,14 @@ export function supportGuoba() {
           label: '新增路由 headers(JSON)',
           component: 'Input',
           componentProps: { type: 'textarea', autosize: { minRows: 2, maxRows: 6 } },
-          placeholder: '{}'
+          placeholder: ''
         },
         {
           field: 'route_add_komari_body',
           label: '新增路由 body',
           component: 'Input',
           componentProps: { type: 'textarea', autosize: { minRows: 2, maxRows: 8 } },
-          placeholder: '{"title":"{{title}}","message":"{{message}}"}'
+          placeholder: ''
         },
         {
           field: 'route_add_komari_username',
@@ -293,14 +286,14 @@ export function supportGuoba() {
           field: 'route_add_message_prefix',
           label: '新增路由 前缀',
           component: 'Input',
-          placeholder: '[Komari]'
+          placeholder: ''
         },
         {
           field: 'route_add_message_template',
           label: '新增路由 模板',
           component: 'Input',
           componentProps: { type: 'textarea', autosize: { minRows: 2, maxRows: 6 } },
-          placeholder: '{prefix} {title}\\n{message}'
+          placeholder: ''
         }
       ],
       getConfigData() {
@@ -315,19 +308,18 @@ export function supportGuoba() {
           route_add_id: '',
           route_add_name: '',
           route_add_enable: true,
-          route_add_path: '/komari/webhook',
-          route_add_secret: '',
+          route_add_path: '',
           route_add_komari_url: '',
-          route_add_komari_method: 'POST',
-          route_add_komari_content_type: 'application/json',
-          route_add_komari_headers: '{}',
-          route_add_komari_body: '{"title":"{{title}}","message":"{{message}}"}',
+          route_add_komari_method: '',
+          route_add_komari_content_type: '',
+          route_add_komari_headers: '',
+          route_add_komari_body: '',
           route_add_komari_username: '',
           route_add_komari_password: '',
           route_add_targets_groups: [],
           route_add_targets_users: [],
-          route_add_message_prefix: '[Komari]',
-          route_add_message_template: '{prefix} {title}\n{message}'
+          route_add_message_prefix: '',
+          route_add_message_template: ''
         }
       },
       async setConfigData(data) {
@@ -359,7 +351,6 @@ export function supportGuoba() {
               name: name || id,
               enable: Boolean(data?.route_add_enable ?? true),
               path: pathValue || '/komari/webhook',
-              secret: String(data?.route_add_secret ?? '').trim(),
               komari: {
                 url,
                 method: data?.route_add_komari_method,

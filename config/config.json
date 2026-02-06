@@ -1,33 +1,8 @@
 {
-  "enable": true,
+  "enable": false,
   "listenHost": "127.0.0.1",
   "listenPort": 26001,
-  "routes": [
-    {
-      "id": "route1",
-      "name": "默认",
-      "enable": true,
-      "path": "/komari/webhook",
-      "secret": "",
-      "komari": {
-        "url": "http://127.0.0.1:26001/komari/webhook",
-        "method": "POST",
-        "content_type": "application/json",
-        "headers": "{\"x-test\":\"1\"}",
-        "body": "{\"title\":\"{{title}}\",\"message\":\"{{message}}\"}",
-        "username": "",
-        "password": ""
-      },
-      "targets": {
-        "groups": [],
-        "users": []
-      },
-      "message": {
-        "prefix": "[Komari]",
-        "template": "{prefix} {title}\n{message}"
-      }
-    }
-  ],
+  "routes": [],
   "security": {
     "maxBodyBytes": 1048576
   }
