@@ -1,33 +1,58 @@
 import { ensureKomariWebhookServer } from '../utils/server.js'
+import fs from 'node:fs'
 import path from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 async function loadPluginBase() {
-  const relCandidates = ['../../../lib/plugins/plugin.js', '../../lib/plugins/plugin.js', '../lib/plugins/plugin.js']
-  for (const rel of relCandidates) {
+  const tryImport = async (p) => {
     try {
-      const mod = await import(new URL(rel, import.meta.url).href)
-      if (mod?.default) return mod.default
-    } catch {}
+      if (!p) return null
+      const mod = await import(pathToFileURL(p).href)
+      return mod?.default || null
+    } catch {
+      return null
+    }
   }
 
-  const absCandidates = [
-    path.resolve(process.cwd(), 'lib', 'plugins', 'plugin.js'),
-    path.resolve(process.cwd(), '..', 'lib', 'plugins', 'plugin.js')
-  ]
-  for (const absPath of absCandidates) {
-    try {
-      const mod = await import(pathToFileURL(absPath).href)
-      if (mod?.default) return mod.default
-    } catch {}
+  const fromRel = ['../../../lib/plugins/plugin.js', '../../lib/plugins/plugin.js', '../lib/plugins/plugin.js']
+  for (const rel of fromRel) {
+    const absPath = fileURLToPath(new URL(rel, import.meta.url))
+    if (fs.existsSync(absPath)) {
+      const base = await tryImport(absPath)
+      if (base) return base
+    }
   }
 
-  return class PluginFallback {
-    constructor() {}
+  const here = path.dirname(fileURLToPath(import.meta.url))
+  let dir = here
+  for (let i = 0; i < 12; i += 1) {
+    const candidate = path.resolve(dir, 'lib', 'plugins', 'plugin.js')
+    if (fs.existsSync(candidate)) {
+      const base = await tryImport(candidate)
+      if (base) return base
+    }
+    const parent = path.dirname(dir)
+    if (parent === dir) break
+    dir = parent
   }
+
+  const cwd = process.cwd()
+  dir = cwd
+  for (let i = 0; i < 12; i += 1) {
+    const candidate = path.resolve(dir, 'lib', 'plugins', 'plugin.js')
+    if (fs.existsSync(candidate)) {
+      const base = await tryImport(candidate)
+      if (base) return base
+    }
+    const parent = path.dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+
+  return null
 }
 
-const plugin = await loadPluginBase()
+const plugin = (await loadPluginBase()) ?? (class PluginFallback {})
 
 const server = ensureKomariWebhookServer()
 server.start().catch(() => {})

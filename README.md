@@ -53,36 +53,36 @@ pnpm install --filter=komari-report-to-yunzai
 1. 安装并启动 Guoba 插件后，在插件配置里找到「Komari Webhook 转发」。
 2. 在面板内配置以下内容：
 
-### 1) Komari Webhook（需要在 Komari 后台填写）
+### 1) 监听配置
 
-以下字段与 Komari 的 Webhook 表单一一对应：
+- `启用插件 / 监听地址 / 监听端口`：决定本插件监听在哪个地址
 
-- `url *`
-- `method`
-- `content_type`
-- `headers`（JSON 格式）
-- `body`
-- `username`
-- `password`
+### 2) 路由（支持多组、互不影响）
+
+插件通过请求路径（`path`）区分不同的 Komari 推送关系；每个路由都可以配置独立的：
+
+- Komari Webhook 表单字段：`url * / method / content_type / headers / body / username / password`
+- 校验：Token（可选）、BasicAuth（可选）、headers/content_type/method
+- 转发目标：QQ群/私聊用户
+- 消息模板
+
+Guoba 面板提供两种方式维护路由：
+
+1) 直接编辑 `路由列表（JSON）`（无限条路由）
+
+2) 使用 `路由操作` 执行：
+
+- `新增`：填写“新增路由 ……”的一组字段后保存
+- `删除`：填入要删除的 `id` 后保存
 
 说明：
 
-- `url`：填写本插件监听地址（面板里会给出默认值）
-- `headers/body`：这里主要用于“保存一份你在 Komari 里填写的内容”，同时插件也会按这些设置进行请求校验（例如要求某些 headers 必须存在且值匹配）
+- `secret` 留空会自动生成并持久化（用于 Token 校验）
+- `username/password` 留空会自动生成并持久化（用于 Basic Auth 校验）
 
-### 2) 监听与鉴权（插件侧）
+> OneBot v11 连接方式通常无法像 icqq 一样获取“好友/群列表”，因此面板里的 QQ/群下拉可能没有数据；此时仍可直接在下拉框内输入纯数字 ID（支持输入并回车添加）。
 
-- `监听地址 / 监听端口 / Webhook 路径`：决定本插件实际监听在哪个地址
-- `鉴权 Token`（可选）：
-  - Komari 请求 URL 携带：`?token=xxx`
-  - 或请求头携带：`x-komari-token: xxx` / `x-webhook-token: xxx`
-
-### 3) 转发目标
-
-- `通知QQ群`：多个群号用英文逗号分隔
-- `通知私聊用户`：多个 QQ 号用英文逗号分隔
-
-### 4) 消息模板
+### 3) 消息模板
 
 模板变量：
 
@@ -99,15 +99,11 @@ pnpm install --filter=komari-report-to-yunzai
 
 配置项说明（常用）：
 
-    komari.url: Komari Webhook 的 url（*必填，通常填本插件监听地址）
-    komari.method: Komari Webhook 的 method（默认 POST）
-    komari.content_type: Komari Webhook 的 content_type（默认 application/json）
-    komari.headers: Komari Webhook 的 headers（HTTP headers in JSON format）
-    komari.body: Komari Webhook 的 body（建议填 JSON，便于解析）
-    komari.username: Komari Webhook 的 username（用于 Basic Auth 校验）
-    komari.password: Komari Webhook 的 password（用于 Basic Auth 校验）
-    targets.groups: 转发到的QQ群列表（多个用逗号分隔）
-    targets.users: 转发到的私聊用户列表（多个用逗号分隔）
+    routes[].path: Webhook 路径（按路径命中路由）
+    routes[].secret: Token（可选，支持 query token / header x-komari-token / x-webhook-token）
+    routes[].komari.*: Komari Webhook 表单对应字段与校验项
+    routes[].targets.groups: 转发到的QQ群列表
+    routes[].targets.users: 转发到的私聊用户列表
 
 ## 配置（手动改文件）
 
@@ -122,10 +118,8 @@ pnpm install --filter=komari-report-to-yunzai
 
 ## 指令
 
-仅主人可用：
-
-- `#komari状态` / `#komari配置`：查看运行状态与当前配置摘要
-- `#komari重载`：重新加载配置并按需重启监听
+- `#komari状态` / `#komari配置`：查看运行状态与当前配置摘要（非主人会打码敏感信息）
+- `#komari重载`：重新加载配置并按需重启监听（仅主人可用）
 
 ## Komari Webhook body 示例
 

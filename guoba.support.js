@@ -47,6 +47,16 @@ function ensureOptionValues(options, values) {
   return base
 }
 
+function isNumericId(value) {
+  return /^\d+$/.test(String(value ?? '').trim())
+}
+
+function isMeaningfulName(value) {
+  const s = String(value ?? '').trim()
+  if (!s) return false
+  return !/stdin|标准输入/i.test(s)
+}
+
 function getGroupOptionsFromBots(bots) {
   const options = []
   for (const bot of bots) {
@@ -54,18 +64,18 @@ function getGroupOptionsFromBots(bots) {
     if (gl && typeof gl.forEach === 'function') {
       gl.forEach((info, id) => {
         const gid = String(id ?? '').trim()
-        if (!gid) return
+        if (!isNumericId(gid)) return
         const name = info?.group_name ?? info?.groupName ?? info?.name ?? ''
-        options.push({ label: name ? `${name} (${gid})` : gid, value: gid })
+        options.push({ label: isMeaningfulName(name) ? `${name} (${gid})` : gid, value: gid })
       })
       continue
     }
     if (gl && typeof gl === 'object') {
       for (const [id, info] of Object.entries(gl)) {
         const gid = String(id ?? '').trim()
-        if (!gid) continue
+        if (!isNumericId(gid)) continue
         const name = info?.group_name ?? info?.groupName ?? info?.name ?? ''
-        options.push({ label: name ? `${name} (${gid})` : gid, value: gid })
+        options.push({ label: isMeaningfulName(name) ? `${name} (${gid})` : gid, value: gid })
       }
     }
   }
@@ -79,18 +89,18 @@ function getFriendOptionsFromBots(bots) {
     if (fl && typeof fl.forEach === 'function') {
       fl.forEach((info, id) => {
         const uid = String(id ?? '').trim()
-        if (!uid) return
+        if (!isNumericId(uid)) return
         const name = info?.remark ?? info?.nickname ?? info?.nick ?? info?.name ?? ''
-        options.push({ label: name ? `${name} (${uid})` : uid, value: uid })
+        options.push({ label: isMeaningfulName(name) ? `${name} (${uid})` : uid, value: uid })
       })
       continue
     }
     if (fl && typeof fl === 'object') {
       for (const [id, info] of Object.entries(fl)) {
         const uid = String(id ?? '').trim()
-        if (!uid) continue
+        if (!isNumericId(uid)) continue
         const name = info?.remark ?? info?.nickname ?? info?.nick ?? info?.name ?? ''
-        options.push({ label: name ? `${name} (${uid})` : uid, value: uid })
+        options.push({ label: isMeaningfulName(name) ? `${name} (${uid})` : uid, value: uid })
       }
     }
   }
@@ -112,8 +122,9 @@ export function supportGuoba() {
   const routes = Array.isArray(cfg.routes) ? cfg.routes : []
   const groupOptions = ensureOptionValues(getGroupOptionsFromBots(bots), routes.flatMap((r) => r?.targets?.groups ?? []))
   const userOptions = ensureOptionValues(getFriendOptionsFromBots(bots), routes.flatMap((r) => r?.targets?.users ?? []))
-  const selectFilterable = { filterable: true, clearable: true }
-  const selectMultiCreatable = { ...selectFilterable, multiple: true, allowCreate: true, defaultFirstOption: true }
+  const selectFilterable = { filterable: true, clearable: true, showSearch: true }
+  const selectCreatable = { ...selectFilterable, allowCreate: true, defaultFirstOption: true, tag: true, mode: 'tags' }
+  const selectMultiCreatable = { ...selectCreatable, multiple: true }
 
   const methodOptions = [
     { label: 'POST', value: 'POST' },
@@ -210,7 +221,7 @@ export function supportGuoba() {
           label: '新增路由 Path',
           component: 'Select',
           options: [{ label: '/komari/webhook', value: '/komari/webhook' }],
-          componentProps: { ...selectFilterable, allowCreate: true, defaultFirstOption: true, placeholder: '请选择或输入', options: [{ label: '/komari/webhook', value: '/komari/webhook' }] }
+          componentProps: { ...selectCreatable, placeholder: '请选择或输入', options: [{ label: '/komari/webhook', value: '/komari/webhook' }] }
         },
         {
           field: 'route_add_secret',
@@ -236,7 +247,7 @@ export function supportGuoba() {
           label: '新增路由 content_type',
           component: 'Select',
           options: contentTypeOptions,
-          componentProps: { ...selectFilterable, allowCreate: true, defaultFirstOption: true, placeholder: '请选择或输入', options: contentTypeOptions }
+          componentProps: { ...selectCreatable, placeholder: '请选择或输入', options: contentTypeOptions }
         },
         {
           field: 'route_add_komari_headers',
