@@ -1,7 +1,8 @@
-import { normalizeConfig, normalizeTargets, readConfig, updateConfig } from './utils/config.js'
+import { ensureConfig, normalizeConfig, normalizeTargets, updateConfig } from './utils/config.js'
 import { ensureKomariWebhookServer } from './utils/server.js'
 
 const server = ensureKomariWebhookServer()
+const MAX_ROUTES = 3
 
 function normalizeTargetsFromGuobaInput(input) {
   if (Array.isArray(input)) return normalizeTargets(input)
@@ -16,9 +17,10 @@ function normalizeTargetsFromGuobaInput(input) {
 function resolveBots() {
   const b = globalThis.Bot
   if (!b) return []
-  if (typeof b === 'object' && (b.uin || b.gl || b.fl)) return [b]
-  if (Array.isArray(b)) return b.filter(Boolean)
-  if (typeof b === 'object') return Object.values(b).filter(Boolean)
+  if (typeof b.pickGroup === 'function') return [b]
+  if (Array.isArray(b)) return b.filter((x) => x && typeof x.pickGroup === 'function')
+  if (b instanceof Map) return Array.from(b.values()).filter((x) => x && typeof x.pickGroup === 'function')
+  if (typeof b === 'object') return Object.values(b).filter((x) => x && typeof x.pickGroup === 'function')
   return []
 }
 
@@ -97,12 +99,140 @@ function getFriendOptionsFromBots(bots) {
 }
 
 export function supportGuoba() {
-  const cfg = normalizeConfig(readConfig())
+  const getCfg = () => normalizeConfig(ensureConfig())
+  const cfg = getCfg()
   const bots = resolveBots()
-  const groupOptions = ensureOptionValues(getGroupOptionsFromBots(bots), cfg.targets.groups)
-  const userOptions = ensureOptionValues(getFriendOptionsFromBots(bots), cfg.targets.users)
+  const groupOptions = ensureOptionValues(getGroupOptionsFromBots(bots), cfg.routes.flatMap((r) => r?.targets?.groups ?? []))
+  const userOptions = ensureOptionValues(getFriendOptionsFromBots(bots), cfg.routes.flatMap((r) => r?.targets?.users ?? []))
   const selectFilterable = { filterable: true, clearable: true }
   const selectMultiCreatable = { ...selectFilterable, multiple: true, allowCreate: true, defaultFirstOption: true }
+
+  const methodOptions = [
+    { label: 'POST', value: 'POST' },
+    { label: 'GET', value: 'GET' },
+    { label: 'PUT', value: 'PUT' },
+    { label: 'PATCH', value: 'PATCH' },
+    { label: 'DELETE', value: 'DELETE' }
+  ]
+  const contentTypeOptions = [
+    { label: 'application/json', value: 'application/json' },
+    { label: 'application/x-www-form-urlencoded', value: 'application/x-www-form-urlencoded' },
+    { label: 'text/plain', value: 'text/plain' }
+  ]
+  const listenHostOptions = [
+    { label: '0.0.0.0（所有网卡）', value: '0.0.0.0' },
+    { label: '127.0.0.1（仅本机）', value: '127.0.0.1' }
+  ]
+
+  const routeSchemas = []
+  for (let i = 0; i < MAX_ROUTES; i += 1) {
+    const n = i + 1
+    routeSchemas.push(
+      {
+        field: `route${n}_enable`,
+        label: `路由${n} 启用`,
+        component: 'Switch'
+      },
+      {
+        field: `route${n}_name`,
+        label: `路由${n} 名称`,
+        component: 'Input',
+        placeholder: `route${n}`
+      },
+      {
+        field: `route${n}_path`,
+        label: `路由${n} Path`,
+        component: 'Select',
+        options: [{ label: `/komari/webhook${n === 1 ? '' : n}`, value: `/komari/webhook${n === 1 ? '' : n}` }],
+        componentProps: {
+          ...selectFilterable,
+          allowCreate: true,
+          defaultFirstOption: true,
+          placeholder: '请选择或输入',
+          options: [{ label: `/komari/webhook${n === 1 ? '' : n}`, value: `/komari/webhook${n === 1 ? '' : n}` }]
+        }
+      },
+      {
+        field: `route${n}_secret`,
+        label: `路由${n} Token`,
+        component: 'Input',
+        placeholder: '留空则自动生成'
+      },
+      {
+        field: `route${n}_komari_url`,
+        label: `路由${n} url*`,
+        component: 'Input',
+        placeholder: `http://你的服务器IP:25888/komari/webhook${n === 1 ? '' : n}`
+      },
+      {
+        field: `route${n}_komari_method`,
+        label: `路由${n} method`,
+        component: 'Select',
+        options: methodOptions,
+        componentProps: { ...selectFilterable, placeholder: '请选择', options: methodOptions }
+      },
+      {
+        field: `route${n}_komari_content_type`,
+        label: `路由${n} content_type`,
+        component: 'Select',
+        options: contentTypeOptions,
+        componentProps: { ...selectFilterable, allowCreate: true, defaultFirstOption: true, placeholder: '请选择或输入', options: contentTypeOptions }
+      },
+      {
+        field: `route${n}_komari_headers`,
+        label: `路由${n} headers(JSON)`,
+        component: 'Input',
+        componentProps: { type: 'textarea', autosize: { minRows: 2, maxRows: 6 } },
+        placeholder: '{"x-komari-token":"xxx"}'
+      },
+      {
+        field: `route${n}_komari_body`,
+        label: `路由${n} body`,
+        component: 'Input',
+        componentProps: { type: 'textarea', autosize: { minRows: 2, maxRows: 8 } },
+        placeholder: '{"title":"{{title}}","message":"{{message}}"}'
+      },
+      {
+        field: `route${n}_komari_username`,
+        label: `路由${n} username`,
+        component: 'Input',
+        placeholder: '留空则自动生成 / 不校验'
+      },
+      {
+        field: `route${n}_komari_password`,
+        label: `路由${n} password`,
+        component: 'Input',
+        placeholder: '留空则自动生成 / 不校验'
+      },
+      {
+        field: `route${n}_targets_groups`,
+        label: `路由${n} 通知群`,
+        component: 'Select',
+        options: groupOptions,
+        componentProps: { ...selectMultiCreatable, placeholder: '请选择群（可输入群号回车添加）', options: groupOptions }
+      },
+      {
+        field: `route${n}_targets_users`,
+        label: `路由${n} 私聊用户`,
+        component: 'Select',
+        options: userOptions,
+        componentProps: { ...selectMultiCreatable, placeholder: '请选择好友（可输入QQ号回车添加）', options: userOptions }
+      },
+      {
+        field: `route${n}_message_prefix`,
+        label: `路由${n} 前缀`,
+        component: 'Input',
+        placeholder: '[Komari]'
+      },
+      {
+        field: `route${n}_message_template`,
+        label: `路由${n} 模板`,
+        component: 'Input',
+        componentProps: { type: 'textarea', autosize: { minRows: 2, maxRows: 6 } },
+        placeholder: '{prefix} {title}\\n{message}'
+      }
+    )
+  }
 
   return {
     pluginInfo: {
@@ -118,62 +248,6 @@ export function supportGuoba() {
     configInfo: {
       schemas: [
         {
-          field: 'komari_url',
-          label: 'Komari Webhook: url *',
-          component: 'Input',
-          placeholder: 'http://你的服务器IP:25888/komari/webhook'
-        },
-        {
-          field: 'komari_method',
-          label: 'Komari Webhook: method',
-          component: 'Select',
-          options: [
-            { label: 'POST', value: 'POST' },
-            { label: 'GET', value: 'GET' },
-            { label: 'PUT', value: 'PUT' },
-            { label: 'PATCH', value: 'PATCH' },
-            { label: 'DELETE', value: 'DELETE' }
-          ],
-          componentProps: { ...selectFilterable, placeholder: '请选择' }
-        },
-        {
-          field: 'komari_content_type',
-          label: 'Komari Webhook: content_type',
-          component: 'Select',
-          options: [
-            { label: 'application/json', value: 'application/json' },
-            { label: 'application/x-www-form-urlencoded', value: 'application/x-www-form-urlencoded' },
-            { label: 'text/plain', value: 'text/plain' }
-          ],
-          componentProps: { ...selectFilterable, allowCreate: true, defaultFirstOption: true, placeholder: '请选择或输入' }
-        },
-        {
-          field: 'komari_headers',
-          label: 'Komari Webhook: headers (JSON)',
-          component: 'Input',
-          componentProps: { type: 'textarea', autosize: { minRows: 2, maxRows: 6 } },
-          placeholder: '{"x-komari-token":"xxx"}'
-        },
-        {
-          field: 'komari_body',
-          label: 'Komari Webhook: body',
-          component: 'Input',
-          componentProps: { type: 'textarea', autosize: { minRows: 2, maxRows: 8 } },
-          placeholder: '{"title":"{{title}}","message":"{{message}}"}'
-        },
-        {
-          field: 'komari_username',
-          label: 'Komari Webhook: username',
-          component: 'Input',
-          placeholder: '留空则不启用 Basic Auth 校验'
-        },
-        {
-          field: 'komari_password',
-          label: 'Komari Webhook: password',
-          component: 'Input',
-          placeholder: '留空则不启用 Basic Auth 校验'
-        },
-        {
           field: 'enable',
           label: '启用插件',
           component: 'Switch'
@@ -182,11 +256,8 @@ export function supportGuoba() {
           field: 'listenHost',
           label: '监听地址',
           component: 'Select',
-          options: [
-            { label: '0.0.0.0（所有网卡）', value: '0.0.0.0' },
-            { label: '127.0.0.1（仅本机）', value: '127.0.0.1' }
-          ],
-          componentProps: { ...selectFilterable, allowCreate: true, defaultFirstOption: true, placeholder: '请选择或输入' }
+          options: listenHostOptions,
+          componentProps: { ...selectFilterable, allowCreate: true, defaultFirstOption: true, placeholder: '请选择或输入', options: listenHostOptions }
         },
         {
           field: 'listenPort',
@@ -194,91 +265,79 @@ export function supportGuoba() {
           component: 'InputNumber',
           placeholder: 25888
         },
-        {
-          field: 'path',
-          label: 'Webhook 路径',
-          component: 'Select',
-          options: [{ label: '/komari/webhook', value: '/komari/webhook' }],
-          componentProps: { ...selectFilterable, allowCreate: true, defaultFirstOption: true, placeholder: '请选择或输入' }
-        },
-        {
-          field: 'secret',
-          label: '鉴权 Token',
-          component: 'Input',
-          placeholder: '留空则不鉴权'
-        },
-        {
-          field: 'targets_groups',
-          label: '通知QQ群',
-          component: 'Select',
-          options: groupOptions,
-          componentProps: { ...selectMultiCreatable, placeholder: '请选择群（可输入群号回车添加）' }
-        },
-        {
-          field: 'targets_users',
-          label: '通知私聊用户',
-          component: 'Select',
-          options: userOptions,
-          componentProps: { ...selectMultiCreatable, placeholder: '请选择好友（可输入QQ号回车添加）' }
-        },
-        {
-          field: 'message_prefix',
-          label: '消息前缀',
-          component: 'Input',
-          placeholder: '[Komari]'
-        },
-        {
-          field: 'message_template',
-          label: '消息模板',
-          component: 'Input',
-          componentProps: { type: 'textarea', autosize: { minRows: 2, maxRows: 6 } },
-          placeholder: '{prefix} {title}\\n{message}'
-        }
+        ...routeSchemas
       ],
       getConfigData() {
-        return {
-          komari_url: cfg.komari.url,
-          komari_method: cfg.komari.method,
-          komari_content_type: cfg.komari.content_type,
-          komari_headers: cfg.komari.headers,
-          komari_body: cfg.komari.body,
-          komari_username: cfg.komari.username,
-          komari_password: cfg.komari.password,
-          enable: cfg.enable,
-          listenHost: cfg.listenHost,
-          listenPort: cfg.listenPort,
-          path: cfg.path,
-          secret: cfg.secret,
-          targets_groups: cfg.targets.groups,
-          targets_users: cfg.targets.users,
-          message_prefix: cfg.message.prefix,
-          message_template: cfg.message.template
+        const c = getCfg()
+        const routes = Array.isArray(c.routes) ? c.routes : []
+        const data = {
+          enable: c.enable,
+          listenHost: c.listenHost,
+          listenPort: c.listenPort
         }
+        for (let i = 0; i < MAX_ROUTES; i += 1) {
+          const n = i + 1
+          const r = routes[i] || {}
+          data[`route${n}_enable`] = Boolean(r.enable)
+          data[`route${n}_name`] = r.name || r.id || `route${n}`
+          data[`route${n}_path`] = r.path || `/komari/webhook${n === 1 ? '' : n}`
+          data[`route${n}_secret`] = r.secret || ''
+          data[`route${n}_komari_url`] = r.komari?.url || ''
+          data[`route${n}_komari_method`] = r.komari?.method || 'POST'
+          data[`route${n}_komari_content_type`] = r.komari?.content_type || 'application/json'
+          data[`route${n}_komari_headers`] = r.komari?.headers || '{}'
+          data[`route${n}_komari_body`] = r.komari?.body || '{"title":"{{title}}","message":"{{message}}"}'
+          data[`route${n}_komari_username`] = r.komari?.username || ''
+          data[`route${n}_komari_password`] = r.komari?.password || ''
+          data[`route${n}_targets_groups`] = r.targets?.groups || []
+          data[`route${n}_targets_users`] = r.targets?.users || []
+          data[`route${n}_message_prefix`] = r.message?.prefix || '[Komari]'
+          data[`route${n}_message_template`] = r.message?.template || '{prefix} {title}\n{message}'
+        }
+        return data
       },
       async setConfigData(data) {
+        const routes = []
+        for (let i = 0; i < MAX_ROUTES; i += 1) {
+          const n = i + 1
+          const pathValue = String(data?.[`route${n}_path`] ?? '').trim()
+          const groups = normalizeTargetsFromGuobaInput(data?.[`route${n}_targets_groups`])
+          const users = normalizeTargetsFromGuobaInput(data?.[`route${n}_targets_users`])
+          const url = String(data?.[`route${n}_komari_url`] ?? '').trim()
+          const enabled = Boolean(data?.[`route${n}_enable`])
+          const hasAny = pathValue || url || groups.length || users.length
+          if (!hasAny && n !== 1) continue
+          routes.push({
+            id: `route${n}`,
+            name: data?.[`route${n}_name`],
+            enable: enabled,
+            path: pathValue || `/komari/webhook${n === 1 ? '' : n}`,
+            secret: data?.[`route${n}_secret`],
+            komari: {
+              url,
+              method: data?.[`route${n}_komari_method`],
+              content_type: data?.[`route${n}_komari_content_type`],
+              headers: data?.[`route${n}_komari_headers`],
+              body: data?.[`route${n}_komari_body`],
+              username: data?.[`route${n}_komari_username`],
+              password: data?.[`route${n}_komari_password`]
+            },
+            targets: {
+              groups,
+              users
+            },
+            message: {
+              prefix: data?.[`route${n}_message_prefix`],
+              template: data?.[`route${n}_message_template`]
+            }
+          })
+        }
+
         const next = {
-          komari: {
-            url: data?.komari_url,
-            method: data?.komari_method,
-            content_type: data?.komari_content_type,
-            headers: data?.komari_headers,
-            body: data?.komari_body,
-            username: data?.komari_username,
-            password: data?.komari_password
-          },
           enable: Boolean(data.enable),
           listenHost: data.listenHost,
           listenPort: data.listenPort,
-          path: data.path,
-          secret: data.secret,
-          targets: {
-            groups: normalizeTargetsFromGuobaInput(data?.targets_groups),
-            users: normalizeTargetsFromGuobaInput(data?.targets_users)
-          },
-          message: {
-            prefix: data?.message_prefix,
-            template: data?.message_template
-          }
+          routes
         }
         updateConfig(next)
         await server.refresh()

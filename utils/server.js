@@ -1,7 +1,7 @@
 import http from 'node:http'
 import { URL } from 'node:url'
 
-import { normalizeConfig, readConfig } from './config.js'
+import { ensureConfig, normalizeConfig } from './config.js'
 
 function decodeBasicAuth(authHeader) {
   const h = String(authHeader ?? '').trim()
@@ -63,13 +63,13 @@ function pickFirstNonEmpty(...values) {
   return ''
 }
 
-function formatMessage(payload, cfg) {
+function formatMessage(payload, route) {
   const title = pickFirstNonEmpty(payload?.title, payload?.event, payload?.type, '通知')
   const msg = pickFirstNonEmpty(payload?.message, payload?.text, payload?.content)
   const message = msg || JSON.stringify(payload ?? {}, null, 2)
 
-  const template = String(cfg.message?.template ?? '{prefix} {title}\n{message}')
-  const prefix = String(cfg.message?.prefix ?? '')
+  const template = String(route.message?.template ?? '{prefix} {title}\n{message}')
+  const prefix = String(route.message?.prefix ?? '')
   return template
     .replaceAll('{prefix}', prefix)
     .replaceAll('{title}', title)
@@ -108,8 +108,8 @@ function parseBody(buffer, contentType) {
   }
 }
 
-function checkToken(urlObj, req, cfg) {
-  const secret = String(cfg.secret ?? '').trim()
+function checkToken(urlObj, req, route) {
+  const secret = String(route.secret ?? '').trim()
   if (!secret) return true
   const tokenFromQuery = urlObj.searchParams.get('token') || ''
   const tokenFromHeader = String(req.headers['x-komari-token'] ?? req.headers['x-webhook-token'] ?? '').trim()
@@ -128,17 +128,17 @@ function parseHeadersJson(input) {
   }
 }
 
-function checkBasicAuth(req, cfg) {
-  const username = String(cfg.komari?.username ?? '').trim()
-  const password = String(cfg.komari?.password ?? '').trim()
+function checkBasicAuth(req, route) {
+  const username = String(route.komari?.username ?? '').trim()
+  const password = String(route.komari?.password ?? '').trim()
   if (!username && !password) return true
   const parsed = decodeBasicAuth(req.headers.authorization)
   if (!parsed) return false
   return parsed.username === username && parsed.password === password
 }
 
-function checkRequiredHeaders(req, cfg) {
-  const required = parseHeadersJson(cfg.komari?.headers)
+function checkRequiredHeaders(req, route) {
+  const required = parseHeadersJson(route.komari?.headers)
   if (!required) return true
   for (const [k, v] of Object.entries(required)) {
     const key = String(k).toLowerCase()
@@ -153,19 +153,22 @@ function checkRequiredHeaders(req, cfg) {
   return true
 }
 
-function checkContentType(req, cfg) {
-  const expected = String(cfg.komari?.content_type ?? '').trim().toLowerCase()
+function checkContentType(req, route) {
+  const expected = String(route.komari?.content_type ?? '').trim().toLowerCase()
   if (!expected) return true
   const actual = String(req.headers['content-type'] ?? '').toLowerCase()
   return actual.includes(expected)
 }
 
-function createServer(onWebhook) {
+function createServer(getCfg, onWebhook) {
   return http.createServer(async (req, res) => {
-    const cfg = normalizeConfig(readConfig())
+    const cfg = getCfg()
 
     const urlObj = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
-    if (urlObj.pathname !== cfg.path) {
+    const route =
+      (Array.isArray(cfg.routes) ? cfg.routes : []).find((r) => r && r.enable && String(r.path || '') === urlObj.pathname) || null
+
+    if (!route) {
       res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
       res.end('Not Found')
       return
@@ -173,36 +176,36 @@ function createServer(onWebhook) {
 
     if (req.method === 'GET') {
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
-      res.end(JSON.stringify({ ok: true }))
+      res.end(JSON.stringify({ ok: true, route: route.id }))
       return
     }
 
-    const expectedMethod = String(cfg.komari?.method ?? 'POST').toUpperCase()
+    const expectedMethod = String(route.komari?.method ?? 'POST').toUpperCase()
     if (req.method !== expectedMethod) {
       res.writeHead(405, { 'content-type': 'text/plain; charset=utf-8' })
       res.end('Method Not Allowed')
       return
     }
 
-    if (!checkToken(urlObj, req, cfg)) {
+    if (!checkToken(urlObj, req, route)) {
       res.writeHead(401, { 'content-type': 'text/plain; charset=utf-8' })
       res.end('Unauthorized')
       return
     }
 
-    if (!checkBasicAuth(req, cfg)) {
+    if (!checkBasicAuth(req, route)) {
       res.writeHead(401, { 'content-type': 'text/plain; charset=utf-8' })
       res.end('Unauthorized')
       return
     }
 
-    if (!checkRequiredHeaders(req, cfg)) {
+    if (!checkRequiredHeaders(req, route)) {
       res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' })
       res.end('Forbidden')
       return
     }
 
-    if (!checkContentType(req, cfg)) {
+    if (!checkContentType(req, route)) {
       res.writeHead(415, { 'content-type': 'text/plain; charset=utf-8' })
       res.end('Unsupported Media Type')
       return
@@ -226,14 +229,14 @@ function createServer(onWebhook) {
       return
     }
 
-    const text = formatMessage(payload, cfg)
+    const text = formatMessage(payload, route)
     const targets = {
-      groups: cfg.targets.groups,
-      users: cfg.targets.users
+      groups: route.targets.groups,
+      users: route.targets.users
     }
 
     try {
-      await onWebhook({ payload, text, targets, cfg })
+      await onWebhook({ payload, text, targets, cfg, route })
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
       res.end(JSON.stringify({ ok: true }))
     } catch (err) {
@@ -247,8 +250,7 @@ function needRestart(prevCfg, nextCfg) {
   return (
     prevCfg.enable !== nextCfg.enable ||
     prevCfg.listenHost !== nextCfg.listenHost ||
-    prevCfg.listenPort !== nextCfg.listenPort ||
-    prevCfg.path !== nextCfg.path
+    prevCfg.listenPort !== nextCfg.listenPort
   )
 }
 
@@ -262,13 +264,15 @@ export function ensureKomariWebhookServer() {
   const state = globalThis.__komariWebhookServer
 
   const start = async () => {
-    const cfg = normalizeConfig(readConfig())
+    const cfg = normalizeConfig(ensureConfig())
     state.cfgSnapshot = cfg
 
     if (!cfg.enable) return
     if (state.server) return
 
-    const srv = createServer(async ({ text, targets }) => {
+    const srv = createServer(
+      () => state.cfgSnapshot ?? normalizeConfig(ensureConfig()),
+      async ({ text, targets }) => {
       const sendTasks = []
       for (const gid of targets.groups) {
         sendTasks.push(trySendToGroup(gid, text))
@@ -277,7 +281,8 @@ export function ensureKomariWebhookServer() {
         sendTasks.push(trySendToUser(uid, text))
       }
       await Promise.allSettled(sendTasks)
-    })
+      }
+    )
 
     await new Promise((resolve, reject) => {
       srv.once('error', reject)
@@ -295,7 +300,7 @@ export function ensureKomariWebhookServer() {
   }
 
   const refresh = async () => {
-    const nextCfg = normalizeConfig(readConfig())
+    const nextCfg = normalizeConfig(ensureConfig())
     const prevCfg = state.cfgSnapshot ?? nextCfg
     const restart = needRestart(prevCfg, nextCfg)
     state.cfgSnapshot = nextCfg

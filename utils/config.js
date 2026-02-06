@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -12,6 +13,7 @@ const defaultConfig = Object.freeze({
   listenPort: 25888,
   path: '/komari/webhook',
   secret: '',
+  routes: [],
   komari: {
     url: '',
     method: 'POST',
@@ -33,6 +35,30 @@ const defaultConfig = Object.freeze({
     maxBodyBytes: 1024 * 1024
   }
 })
+
+function randomUrlSafeString(bytes = 18) {
+  return crypto
+    .randomBytes(bytes)
+    .toString('base64')
+    .replaceAll('+', '-')
+    .replaceAll('/', '_')
+    .replaceAll('=', '')
+}
+
+function shouldRegenerateSecret(value) {
+  const s = String(value ?? '').trim()
+  return !s || s === 'tok' || s === 'token'
+}
+
+function shouldRegenerateUser(value) {
+  const s = String(value ?? '').trim()
+  return !s || s === 'u' || s === 'user'
+}
+
+function shouldRegeneratePass(value) {
+  const s = String(value ?? '').trim()
+  return !s || s === 'p' || s === 'pass' || s === 'password'
+}
 
 function ensureDirForFile(filePath) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true })
@@ -82,12 +108,83 @@ export function writeConfig(nextConfig) {
   return merged
 }
 
+export function ensureConfig() {
+  const current = readConfig()
+  const normalized = normalizeConfig(current)
+  if (JSON.stringify(current) !== JSON.stringify(normalized)) {
+    return writeConfig(normalized)
+  }
+  return normalized
+}
+
 export function normalizeTargets(value) {
   const list = Array.isArray(value) ? value : []
   return list
     .map((v) => String(v ?? '').trim())
     .filter(Boolean)
     .filter((v, i, arr) => arr.indexOf(v) === i)
+}
+
+function normalizePathname(value, fallback) {
+  let p = String(value ?? fallback ?? '').trim() || String(fallback ?? '').trim() || '/'
+  if (!p.startsWith('/')) p = `/${p}`
+  return p
+}
+
+function normalizeRoute(route, index, cfg) {
+  const r = deepMerge(
+    {
+      id: '',
+      name: '',
+      enable: true,
+      path: defaultConfig.path,
+      secret: '',
+      komari: structuredClone(defaultConfig.komari),
+      targets: structuredClone(defaultConfig.targets),
+      message: structuredClone(defaultConfig.message)
+    },
+    route ?? {}
+  )
+
+  r.enable = Boolean(r.enable)
+  r.id = String(r.id ?? '').trim() || `route${index + 1}`
+  r.name = String(r.name ?? '').trim() || r.id
+  r.path = normalizePathname(r.path, defaultConfig.path)
+  r.secret = String(r.secret ?? '').trim()
+
+  r.komari ??= {}
+  r.komari.url = String(r.komari.url ?? '').trim()
+  r.komari.method = String(r.komari.method ?? defaultConfig.komari.method).trim().toUpperCase() || defaultConfig.komari.method
+  r.komari.content_type = String(r.komari.content_type ?? defaultConfig.komari.content_type).trim() || defaultConfig.komari.content_type
+  r.komari.headers = String(r.komari.headers ?? defaultConfig.komari.headers).trim() || defaultConfig.komari.headers
+  r.komari.body = String(r.komari.body ?? defaultConfig.komari.body)
+  r.komari.username = String(r.komari.username ?? '').trim()
+  r.komari.password = String(r.komari.password ?? '').trim()
+
+  r.targets ??= {}
+  r.targets.groups = normalizeTargets(r.targets.groups)
+  r.targets.users = normalizeTargets(r.targets.users)
+
+  r.message ??= {}
+  r.message.prefix = String(r.message.prefix ?? defaultConfig.message.prefix)
+  r.message.template = String(r.message.template ?? defaultConfig.message.template)
+
+  if (!r.komari.url) {
+    const host = cfg.listenHost === '0.0.0.0' ? '你的服务器IP' : cfg.listenHost
+    r.komari.url = `http://${host}:${cfg.listenPort}${r.path}`
+  }
+
+  if (shouldRegenerateSecret(r.secret)) {
+    r.secret = randomUrlSafeString(18)
+  }
+  if (shouldRegenerateUser(r.komari.username)) {
+    r.komari.username = `komari_${randomUrlSafeString(6)}`
+  }
+  if (shouldRegeneratePass(r.komari.password)) {
+    r.komari.password = randomUrlSafeString(18)
+  }
+
+  return r
 }
 
 export function normalizeConfig(input) {
@@ -99,10 +196,7 @@ export function normalizeConfig(input) {
   const port = Number(cfg.listenPort)
   cfg.listenPort = Number.isFinite(port) ? Math.max(1, Math.min(65535, Math.trunc(port))) : defaultConfig.listenPort
 
-  let p = String(cfg.path ?? defaultConfig.path).trim() || defaultConfig.path
-  if (!p.startsWith('/')) p = `/${p}`
-  cfg.path = p
-
+  cfg.path = normalizePathname(cfg.path, defaultConfig.path)
   cfg.secret = String(cfg.secret ?? '').trim()
 
   cfg.komari ??= {}
@@ -128,10 +222,30 @@ export function normalizeConfig(input) {
     ? Math.max(1024, Math.min(10 * 1024 * 1024, Math.trunc(maxBodyBytes)))
     : defaultConfig.security.maxBodyBytes
 
-  if (!cfg.komari.url) {
-    const host = cfg.listenHost === '0.0.0.0' ? '你的服务器IP' : cfg.listenHost
-    cfg.komari.url = `http://${host}:${cfg.listenPort}${cfg.path}`
+  const legacyRoute = {
+    id: 'default',
+    name: '默认',
+    enable: true,
+    path: cfg.path,
+    secret: cfg.secret,
+    komari: cfg.komari,
+    targets: cfg.targets,
+    message: cfg.message
   }
+
+  const routesInput = Array.isArray(cfg.routes) ? cfg.routes : []
+  const routesSource = routesInput.length ? routesInput : [legacyRoute]
+  cfg.routes = routesSource.map((r, i) => {
+    const base = i === 0 ? legacyRoute : undefined
+    return normalizeRoute(deepMerge(base ?? {}, r ?? {}), i, cfg)
+  })
+
+  const firstRoute = cfg.routes[0]
+  cfg.path = firstRoute.path
+  cfg.secret = firstRoute.secret
+  cfg.komari = firstRoute.komari
+  cfg.targets = firstRoute.targets
+  cfg.message = firstRoute.message
 
   return cfg
 }
@@ -139,5 +253,10 @@ export function normalizeConfig(input) {
 export function updateConfig(partial) {
   const current = readConfig()
   const merged = normalizeConfig(deepMerge(current, partial ?? {}))
-  return writeConfig(merged)
+  const written = writeConfig(merged)
+  const normalized = normalizeConfig(written)
+  if (JSON.stringify(written) !== JSON.stringify(normalized)) {
+    return writeConfig(normalized)
+  }
+  return written
 }
