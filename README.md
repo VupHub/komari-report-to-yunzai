@@ -173,3 +173,10 @@ Komari 后台填写建议：
 
 如果 Komari 发送的不是 JSON，插件会把请求体当作文本转发。
 
+## License
+
+This project is licensed under the MIT License.
+
+## 开源协议
+
+本项目基于 MIT License 开源。
