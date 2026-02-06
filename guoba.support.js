@@ -51,13 +51,15 @@ export function supportGuoba() {
         {
           field: 'komari_headers',
           label: 'Komari Webhook: headers (JSON)',
-          component: 'Textarea',
+          component: 'Input',
+          componentProps: { type: 'textarea', autosize: { minRows: 2, maxRows: 6 } },
           placeholder: '{"x-komari-token":"xxx"}'
         },
         {
           field: 'komari_body',
           label: 'Komari Webhook: body',
-          component: 'Textarea',
+          component: 'Input',
+          componentProps: { type: 'textarea', autosize: { minRows: 2, maxRows: 8 } },
           placeholder: '{"title":"{{title}}","message":"{{message}}"}'
         },
         {
@@ -122,7 +124,8 @@ export function supportGuoba() {
         {
           field: 'message_template',
           label: '消息模板',
-          component: 'Textarea',
+          component: 'Input',
+          componentProps: { type: 'textarea', autosize: { minRows: 2, maxRows: 6 } },
           placeholder: '{prefix} {title}\\n{message}'
         }
       ],
