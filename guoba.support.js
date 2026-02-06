@@ -3,11 +3,8 @@ import { ensureKomariWebhookServer } from './utils/server.js'
 
 const server = ensureKomariWebhookServer()
 
-function toCommaSeparated(list) {
-  return (Array.isArray(list) ? list : []).join(',')
-}
-
-function fromCommaSeparated(input) {
+function normalizeTargetsFromGuobaInput(input) {
+  if (Array.isArray(input)) return normalizeTargets(input)
   return normalizeTargets(
     String(input ?? '')
       .split(',')
@@ -16,7 +13,97 @@ function fromCommaSeparated(input) {
   )
 }
 
+function resolveBots() {
+  const b = globalThis.Bot
+  if (!b) return []
+  if (typeof b === 'object' && (b.uin || b.gl || b.fl)) return [b]
+  if (Array.isArray(b)) return b.filter(Boolean)
+  if (typeof b === 'object') return Object.values(b).filter(Boolean)
+  return []
+}
+
+function uniqOptions(options) {
+  const seen = new Set()
+  const result = []
+  for (const o of Array.isArray(options) ? options : []) {
+    const value = String(o?.value ?? '')
+    if (!value || seen.has(value)) continue
+    seen.add(value)
+    result.push({ label: String(o?.label ?? value), value })
+  }
+  return result
+}
+
+function ensureOptionValues(options, values) {
+  const base = uniqOptions(options)
+  const set = new Set(base.map((o) => o.value))
+  for (const v of Array.isArray(values) ? values : []) {
+    const value = String(v ?? '').trim()
+    if (!value || set.has(value)) continue
+    set.add(value)
+    base.push({ label: value, value })
+  }
+  return base
+}
+
+function getGroupOptionsFromBots(bots) {
+  const options = []
+  for (const bot of bots) {
+    const gl = bot?.gl
+    if (gl && typeof gl.forEach === 'function') {
+      gl.forEach((info, id) => {
+        const gid = String(id ?? '').trim()
+        if (!gid) return
+        const name = info?.group_name ?? info?.groupName ?? info?.name ?? ''
+        options.push({ label: name ? `${name} (${gid})` : gid, value: gid })
+      })
+      continue
+    }
+    if (gl && typeof gl === 'object') {
+      for (const [id, info] of Object.entries(gl)) {
+        const gid = String(id ?? '').trim()
+        if (!gid) continue
+        const name = info?.group_name ?? info?.groupName ?? info?.name ?? ''
+        options.push({ label: name ? `${name} (${gid})` : gid, value: gid })
+      }
+    }
+  }
+  return uniqOptions(options).sort((a, b) => a.label.localeCompare(b.label, 'zh-Hans-CN'))
+}
+
+function getFriendOptionsFromBots(bots) {
+  const options = []
+  for (const bot of bots) {
+    const fl = bot?.fl
+    if (fl && typeof fl.forEach === 'function') {
+      fl.forEach((info, id) => {
+        const uid = String(id ?? '').trim()
+        if (!uid) return
+        const name = info?.remark ?? info?.nickname ?? info?.nick ?? info?.name ?? ''
+        options.push({ label: name ? `${name} (${uid})` : uid, value: uid })
+      })
+      continue
+    }
+    if (fl && typeof fl === 'object') {
+      for (const [id, info] of Object.entries(fl)) {
+        const uid = String(id ?? '').trim()
+        if (!uid) continue
+        const name = info?.remark ?? info?.nickname ?? info?.nick ?? info?.name ?? ''
+        options.push({ label: name ? `${name} (${uid})` : uid, value: uid })
+      }
+    }
+  }
+  return uniqOptions(options).sort((a, b) => a.label.localeCompare(b.label, 'zh-Hans-CN'))
+}
+
 export function supportGuoba() {
+  const cfg = normalizeConfig(readConfig())
+  const bots = resolveBots()
+  const groupOptions = ensureOptionValues(getGroupOptionsFromBots(bots), cfg.targets.groups)
+  const userOptions = ensureOptionValues(getFriendOptionsFromBots(bots), cfg.targets.users)
+  const selectFilterable = { filterable: true, clearable: true }
+  const selectMultiCreatable = { ...selectFilterable, multiple: true, allowCreate: true, defaultFirstOption: true }
+
   return {
     pluginInfo: {
       name: 'komari-report-to-yunzai',
@@ -39,14 +126,26 @@ export function supportGuoba() {
         {
           field: 'komari_method',
           label: 'Komari Webhook: method',
-          component: 'Input',
-          placeholder: 'POST'
+          component: 'Select',
+          options: [
+            { label: 'POST', value: 'POST' },
+            { label: 'GET', value: 'GET' },
+            { label: 'PUT', value: 'PUT' },
+            { label: 'PATCH', value: 'PATCH' },
+            { label: 'DELETE', value: 'DELETE' }
+          ],
+          componentProps: { ...selectFilterable, placeholder: '请选择' }
         },
         {
           field: 'komari_content_type',
           label: 'Komari Webhook: content_type',
-          component: 'Input',
-          placeholder: 'application/json'
+          component: 'Select',
+          options: [
+            { label: 'application/json', value: 'application/json' },
+            { label: 'application/x-www-form-urlencoded', value: 'application/x-www-form-urlencoded' },
+            { label: 'text/plain', value: 'text/plain' }
+          ],
+          componentProps: { ...selectFilterable, allowCreate: true, defaultFirstOption: true, placeholder: '请选择或输入' }
         },
         {
           field: 'komari_headers',
@@ -82,8 +181,12 @@ export function supportGuoba() {
         {
           field: 'listenHost',
           label: '监听地址',
-          component: 'Input',
-          placeholder: '0.0.0.0'
+          component: 'Select',
+          options: [
+            { label: '0.0.0.0（所有网卡）', value: '0.0.0.0' },
+            { label: '127.0.0.1（仅本机）', value: '127.0.0.1' }
+          ],
+          componentProps: { ...selectFilterable, allowCreate: true, defaultFirstOption: true, placeholder: '请选择或输入' }
         },
         {
           field: 'listenPort',
@@ -94,8 +197,9 @@ export function supportGuoba() {
         {
           field: 'path',
           label: 'Webhook 路径',
-          component: 'Input',
-          placeholder: '/komari/webhook'
+          component: 'Select',
+          options: [{ label: '/komari/webhook', value: '/komari/webhook' }],
+          componentProps: { ...selectFilterable, allowCreate: true, defaultFirstOption: true, placeholder: '请选择或输入' }
         },
         {
           field: 'secret',
@@ -106,14 +210,16 @@ export function supportGuoba() {
         {
           field: 'targets_groups',
           label: '通知QQ群',
-          component: 'Input',
-          placeholder: '多个群号用逗号分隔，如：123,456'
+          component: 'Select',
+          options: groupOptions,
+          componentProps: { ...selectMultiCreatable, placeholder: '请选择群（可输入群号回车添加）' }
         },
         {
           field: 'targets_users',
           label: '通知私聊用户',
-          component: 'Input',
-          placeholder: '多个QQ号用逗号分隔，如：123,456'
+          component: 'Select',
+          options: userOptions,
+          componentProps: { ...selectMultiCreatable, placeholder: '请选择好友（可输入QQ号回车添加）' }
         },
         {
           field: 'message_prefix',
@@ -130,7 +236,6 @@ export function supportGuoba() {
         }
       ],
       getConfigData() {
-        const cfg = normalizeConfig(readConfig())
         return {
           komari_url: cfg.komari.url,
           komari_method: cfg.komari.method,
@@ -144,8 +249,8 @@ export function supportGuoba() {
           listenPort: cfg.listenPort,
           path: cfg.path,
           secret: cfg.secret,
-          targets_groups: toCommaSeparated(cfg.targets.groups),
-          targets_users: toCommaSeparated(cfg.targets.users),
+          targets_groups: cfg.targets.groups,
+          targets_users: cfg.targets.users,
           message_prefix: cfg.message.prefix,
           message_template: cfg.message.template
         }
@@ -167,8 +272,8 @@ export function supportGuoba() {
           path: data.path,
           secret: data.secret,
           targets: {
-            groups: fromCommaSeparated(data?.targets_groups),
-            users: fromCommaSeparated(data?.targets_users)
+            groups: normalizeTargetsFromGuobaInput(data?.targets_groups),
+            users: normalizeTargetsFromGuobaInput(data?.targets_users)
           },
           message: {
             prefix: data?.message_prefix,
