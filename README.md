@@ -79,7 +79,7 @@ Guoba 面板提供两种方式维护路由：
 - 本插件不使用 secret/token（Komari 不支持）；仅支持 Basic Auth（username/password）
 - `username/password` 留空会自动生成并持久化（用于 Basic Auth 校验）
 
-> OneBot v11 连接方式通常无法像 icqq 一样获取“好友/群列表”，因此面板里的 QQ/群下拉可能没有数据；此时仍可直接在下拉框内输入纯数字 ID（支持输入并回车添加）。
+> OneBot v11 连接方式通常无法像 icqq 一样获取“好友/群列表”，因此面板里的 QQ/群下拉可能没有数据；此时可以通过Ctrl+F5强制刷新页面使得列表正常显示；仍可直接在下拉框内输入纯数字 ID（支持输入并回车添加）。
 
 示例配置（仅示例，请按你的实际端口/群号填写；`url` 不要带反引号/多余空格）：
 
@@ -163,7 +163,7 @@ Komari 后台填写建议：
 - `#komari状态` / `#komari配置`：查看运行状态与当前配置摘要（非主人会打码敏感信息）
 - `#komari重载`：重新加载配置并按需重启监听（仅主人可用）
 
-## Komari Webhook body 示例
+## Komari  Webhook body 示例
 
 建议在 Komari 的 Webhook `body` 填 JSON（与默认配置一致），这样插件可以直接解析并转发：
 
@@ -172,10 +172,6 @@ Komari 后台填写建议：
 ```
 
 如果 Komari 发送的不是 JSON，插件会把请求体当作文本转发。
-
-## License
-
-This project is licensed under the MIT License.
 
 ## 开源协议
 
