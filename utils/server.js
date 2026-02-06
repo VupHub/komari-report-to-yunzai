@@ -63,10 +63,43 @@ function pickFirstNonEmpty(...values) {
   return ''
 }
 
+function toShanghaiTimeString(iso) {
+  const d = new Date(iso)
+  if (!Number.isFinite(d.getTime())) return ''
+  try {
+    const parts = new Intl.DateTimeFormat('zh-CN', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    }).formatToParts(d)
+    const map = Object.fromEntries(parts.map((p) => [p.type, p.value]))
+    const y = map.year
+    const m = map.month
+    const day = map.day
+    const h = map.hour
+    const min = map.minute
+    const s = map.second
+    if (y && m && day && h && min && s) return `${y}-${m}-${day} ${h}:${min}:${s}`
+  } catch {}
+  return ''
+}
+
+function normalizeIsoZTimeText(text) {
+  const t = String(text ?? '')
+  if (!t) return t
+  const isoZ = /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b/g
+  return t.replace(isoZ, (m) => toShanghaiTimeString(m) || m)
+}
+
 function formatMessage(payload, route) {
   const title = pickFirstNonEmpty(payload?.title, payload?.event, payload?.type, '通知')
   const msg = pickFirstNonEmpty(payload?.message, payload?.text, payload?.content)
-  const message = msg || JSON.stringify(payload ?? {}, null, 2)
+  const message = normalizeIsoZTimeText(msg || JSON.stringify(payload ?? {}, null, 2))
 
   const template = String(route.message?.template ?? '{prefix} {title}\n{message}')
   const prefix = String(route.message?.prefix ?? '')
