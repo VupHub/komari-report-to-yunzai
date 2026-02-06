@@ -81,6 +81,50 @@ Guoba 面板提供两种方式维护路由：
 
 > OneBot v11 连接方式通常无法像 icqq 一样获取“好友/群列表”，因此面板里的 QQ/群下拉可能没有数据；此时仍可直接在下拉框内输入纯数字 ID（支持输入并回车添加）。
 
+示例配置（仅示例，请按你的实际端口/群号填写；`url` 不要带反引号/多余空格）：
+
+```json
+{
+  "enable": true,
+  "listenHost": "0.0.0.0",
+  "listenPort": 26001,
+  "routes": [
+    {
+      "id": "0001",
+      "name": "通知1",
+      "enable": true,
+      "path": "/komari/webhook",
+      "komari": {
+        "url": "http://你的公网IP:26001/komari/webhook",
+        "method": "POST",
+        "content_type": "application/json",
+        "headers": "",
+        "body": "",
+        "username": "komari_xxxxxx",
+        "password": "xxxxxxxxxxxxxxxxxx"
+      },
+      "targets": {
+        "groups": ["*********"],
+        "users": []
+      },
+      "message": {
+        "prefix": "[komari]",
+        "template": "{prefix} {title}\n{message}"
+      }
+    }
+  ],
+  "security": {
+    "maxBodyBytes": 1048576
+  }
+}
+```
+
+Komari 后台填写建议：
+
+- `url`：填上面的完整地址（与 `listenHost/listenPort/path` 对应）
+- `username/password`：需要与本插件路由里的 `komari.username/komari.password` 一致
+- `body`：建议使用 JSON（见文末示例），便于生成标题/正文
+
 ### 3) 消息模板
 
 模板变量：

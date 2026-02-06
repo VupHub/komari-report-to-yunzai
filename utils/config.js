@@ -158,7 +158,10 @@ function normalizeRoute(route, index, cfg) {
 
   r.message ??= {}
   r.message.prefix = String(r.message.prefix ?? '[Komari]')
-  r.message.template = String(r.message.template ?? '{prefix} {title}\n{message}')
+  {
+    const tplRaw = String(r.message.template ?? '')
+    r.message.template = tplRaw.trim() ? tplRaw : '{prefix} {title}\n{message}'
+  }
 
   if (r.enable && shouldRegenerateUser(r.komari.username)) {
     r.komari.username = `komari_${randomUrlSafeString(6)}`

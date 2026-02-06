@@ -70,11 +70,13 @@ function formatMessage(payload, route) {
 
   const template = String(route.message?.template ?? '{prefix} {title}\n{message}')
   const prefix = String(route.message?.prefix ?? '')
-  return template
+  const rendered = template
     .replaceAll('{prefix}', prefix)
     .replaceAll('{title}', title)
     .replaceAll('{message}', message)
     .trim()
+  if (rendered) return rendered
+  return `${prefix ? `${prefix} ` : ''}${title}\n${message}`.trim()
 }
 
 function readRequestBody(req, maxBytes) {
