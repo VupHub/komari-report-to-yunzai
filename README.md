@@ -1,6 +1,6 @@
 # komari-report-to-yunzai
 
-将 Komari 的 Webhook 通知转发到 TRSS-Yunzai 的指定 QQ 群 / 私聊用户，并支持在 Guoba 面板中可视化配置。
+将 [Komari](https://github.com/komari-monitor/komari) 的 Webhook 通知转发到 [TRSS-Yunzai](https://github.com/TimeRainStarSky/Yunzai) 的指定 QQ 群 / 私聊用户，并支持在 [Guoba](https://github.com/guoba-yunzai/Guoba-Plugin) 面板中可视化配置。
 
 ## 功能
 
