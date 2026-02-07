@@ -161,6 +161,11 @@ Komari 后台填写建议：
 ## 指令
 
 - `#komari状态` / `#komari配置`：查看运行状态与当前配置摘要（非主人会打码敏感信息）
+
+> [!WARNING]
+>
+> 请勿在群聊触发`#komari状态`，会导致username&password泄漏。
+
 - `#komari重载`：重新加载配置并按需重启监听（仅主人可用）
 
 ## Komari  Webhook body 示例
